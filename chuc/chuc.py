@@ -21,19 +21,6 @@ class Uplift:
         trainCols=allCols
         return trainCols
     
-    def stratifyNsplit(self, df_temp, test_size=0.2, random_state=200):
-        split=StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=random_state)
-        for train_index, test_index in  split.split(df_temp, df_temp[[self.treatmentLabel]]):
-            strat_train_set=df_temp.loc[train_index]
-            strat_test_set=df_temp.loc[test_index]
-        return strat_train_set, strat_test_set
-    
-    def getSplitDf(self, df_temp):
-        df_train, df_test=self.stratifyNsplit(df_temp, test_size=0.2, random_state=200)
-        df_train=df_train.reset_index(drop=True)
-        df_test=df_test.reset_index(drop=True)
-        return df_train, df_test
-    
     def getBestXGBParams(self, n_jobs, n_iter, cv, scoring):
         parameters_xgb=self.param_search_space
         rsearch = RandomizedSearchCV(self.propensityAlgo(), parameters_xgb, scoring=scoring, n_jobs= n_jobs , n_iter=n_iter, cv=cv)
@@ -44,7 +31,7 @@ class Uplift:
     
     def group_scores(self, rank,nGroups):
         labels= [ 'group_'+ str(x) for x in range(nGroups)]
-        series, bins = pd.qcut(rank, nGroups,labels = labels ,retbins=True, duplicates='drop')
+        series, bins = pd.qcut(rank.rank(method='first'), nGroups,labels = labels ,retbins=True, duplicates='drop')
         return series
     
     def getPropensityModel(self):
@@ -93,24 +80,19 @@ class Uplift:
         for index1, index2 in  split.split(self.uplift_train, self.uplift_train[[self.treatmentLabel]]):
             split_array.append(index1)
             split_array.append(index2)
-
         for ind in range(len(split_array)):
             df_uplift=self.uplift_train.loc[split_array[ind]]
             groupsMerged=self.generateUplift(df_uplift)
             holdoutCr+=list(groupsMerged.mean_holdout)
             uplift+=list(groupsMerged.uplift)
-
         x=pd.DataFrame(holdoutCr)
         y=pd.DataFrame(uplift)
-
         x.columns=['propensity']
         y.columns=['uplift']
-        
         self.propensity=x
         self.uplift=y
         model_uplift = XGBRegressor()
         model_uplift.fit(x,y)
-
         return model_uplift
 
     def getModels(self):
@@ -132,9 +114,7 @@ class Uplift:
     def fit(self):
         self.getModels()
         self.uplift_train=self.scoreUplift(self.uplift_train, 0)
-        self.uplift_test=self.scoreUplift(self.uplift_test, 1)
-    
-        
+ 
     def plotQini(self, df_temp):
         up_eval=UpliftEval(df_temp[self.treatmentLabel], df_temp[self.outcome], df_temp.uplift, n_bins=20)
         return up_eval
@@ -143,10 +123,6 @@ class Uplift:
         up_eval=self.plotQini(self.uplift_train)
         up_eval.plot_aqini()
     
-    def plotQiniTest(self):
-        up_eval=self.plotQini(self.uplift_test)
-        up_eval.plot_aqini()
-        
     def getDiagnostics(self):
         d={'propensity':self.propensity['propensity'], 'uplift': self.uplift['uplift']}
         df_temp=pd.DataFrame(d)
@@ -157,10 +133,8 @@ class Uplift:
         print('**** Quality of Propensity Fit ****')
         if self.propensityAlgo==XGBRegressor:
             print('R-Squared on Train set:',r2_score(self.uplift_train[self.outcome],self.uplift_train['propensity'])  )
-            print('R-Squared on Test set:',r2_score(self.uplift_test[self.outcome],self.uplift_test['propensity']))
         else:
             print('ROC on Train set:', roc_auc_score(self.uplift_train[self.outcome],self.uplift_train['propensity']))
-            print('ROC on Test set:',roc_auc_score(self.uplift_test[self.outcome],self.uplift_test['propensity']) )
         
         return ax
         
@@ -180,7 +154,5 @@ class Uplift:
             self.propensityAlgo=XGBRegressor
         else:
             self.propensityAlgo=XGBClassifier
-        
-        self.uplift_train, self.uplift_test = self.getSplitDf(df_temp)
+        self.uplift_train=df_temp
         self.param_search_space=param_search_space
-    
