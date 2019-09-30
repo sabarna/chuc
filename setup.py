@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='chuc',
-    version='0.1',
+    version='0.2',
     packages=find_packages(exclude=['tests*']),
     license='MIT',
     description='Conversion Homogeneity based Uplift computation',
